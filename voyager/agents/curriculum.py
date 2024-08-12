@@ -6,11 +6,12 @@ import re
 import voyager.utils as U
 from voyager.prompts import load_prompt
 from voyager.utils.json_utils import fix_and_parse_json
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings.openai import OpenAIEmbeddings
+# from langchain.chat_models import ChatOpenAI
+from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
+# from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.schema import HumanMessage, SystemMessage
 from langchain.vectorstores import Chroma
-
+import os
 
 class CurriculumAgent:
     def __init__(
@@ -25,17 +26,46 @@ class CurriculumAgent:
         mode="auto",
         warm_up=None,
         core_inventory_items: str | None = None,
+        system_prompt_cut_to=1800
     ):
-        self.llm = ChatOpenAI(
-            model_name=model_name,
+        self.system_prompt_cut_to = system_prompt_cut_to
+        # self.llm = ChatOpenAI(
+        #     model_name=model_name,
+        #     temperature=temperature,
+        #     request_timeout=request_timout,
+        # )
+        # self.qa_llm = ChatOpenAI(
+        #     model_name=qa_model_name,
+        #     temperature=qa_temperature,
+        #     request_timeout=request_timout,
+        # )
+
+        self.llm = AzureChatOpenAI(
+            azure_endpoint=os.environ["AZURE_MODEL_ENDPOINT"],
+            azure_deployment=model_name,
+            openai_api_version=os.environ["AZURE_OPENAI_API_VERSION"],
+            # model_name=model_name,
             temperature=temperature,
             request_timeout=request_timout,
         )
-        self.qa_llm = ChatOpenAI(
-            model_name=qa_model_name,
+        self.qa_llm = AzureChatOpenAI(
+            azure_endpoint=os.environ["AZURE_MODEL_ENDPOINT"],
+            azure_deployment=model_name,
+            openai_api_version=os.environ["AZURE_OPENAI_API_VERSION"],
+            # model_name=qa_model_name,
             temperature=qa_temperature,
             request_timeout=request_timout,
         )
+        embeddings_model = AzureOpenAIEmbeddings(
+            azure_endpoint=os.environ["AZURE_EMBEDDING_ENDPOINT"],
+            azure_deployment='text-embedding-3-large',
+            openai_api_version=os.environ["AZURE_OPENAI_API_VERSION"],
+            openai_api_key=os.environ['OPENAI_EMBEDDING_API_KEY']
+        )
+        
+
+        
+
         assert mode in [
             "auto",
             "manual",
@@ -55,9 +85,14 @@ class CurriculumAgent:
             self.failed_tasks = []
             self.qa_cache = {}
         # vectordb for qa cache
+        # self.qa_cache_questions_vectordb = Chroma(
+        #     collection_name="qa_cache_questions_vectordb",
+        #     embedding_function=OpenAIEmbeddings(),
+        #     persist_directory=f"{ckpt_dir}/curriculum/vectordb",
+        # )
         self.qa_cache_questions_vectordb = Chroma(
             collection_name="qa_cache_questions_vectordb",
-            embedding_function=OpenAIEmbeddings(),
+            embedding_function=embeddings_model,
             persist_directory=f"{ckpt_dir}/curriculum/vectordb",
         )
         assert self.qa_cache_questions_vectordb._collection.count() == len(
@@ -134,6 +169,11 @@ class CurriculumAgent:
     def render_system_message(self):
         system_message = SystemMessage(content=load_prompt("curriculum"))
         assert isinstance(system_message, SystemMessage)
+        content_split = system_message.content.split()
+        content_split_len = len(content_split)
+        # TODO: 2000大概值，这样肯定效果会很不好
+        if content_split_len > self.system_prompt_cut_to:
+            system_message.content = ' '.join(content_split[content_split_len-self.system_prompt_cut_to:])
         return system_message
 
     def render_observation(self, *, events, chest_observation):
@@ -434,7 +474,14 @@ class CurriculumAgent:
         return context
 
     def render_system_message_qa_step1_ask_questions(self):
-        return SystemMessage(content=load_prompt("curriculum_qa_step1_ask_questions"))
+        system_message = SystemMessage(content=load_prompt("curriculum_qa_step1_ask_questions"))
+        content_split = system_message.content.split()
+        content_split_len = len(content_split)
+        # TODO: 2000大概值，这样肯定效果会很不好
+        if content_split_len > self.system_prompt_cut_to:
+            system_message.content = ' '.join(content_split[content_split_len-self.system_prompt_cut_to:])
+        # return SystemMessage(content=load_prompt("curriculum_qa_step1_ask_questions"))
+        return system_message
 
     def render_human_message_qa_step1_ask_questions(self, *, events, chest_observation):
         observation = self.render_observation(
@@ -479,9 +526,16 @@ class CurriculumAgent:
         return questions, concepts
 
     def render_system_message_qa_step2_answer_questions(self):
-        return SystemMessage(
-            content=load_prompt("curriculum_qa_step2_answer_questions")
-        )
+        system_message = SystemMessage(content=load_prompt("curriculum_qa_step2_answer_questions"))
+        content_split = system_message.content.split()
+        content_split_len = len(content_split)
+        # TODO: 2000大概值，这样肯定效果会很不好
+        if content_split_len > self.system_prompt_cut_to:
+            system_message.content = ' '.join(content_split[content_split_len-self.system_prompt_cut_to:])
+        # return SystemMessage(
+        #     content=load_prompt("curriculum_qa_step2_answer_questions")
+        # )
+        return system_message
 
     def render_human_message_qa_step2_answer_questions(self, question):
         content = f"Question: {question}"

@@ -1,0 +1,3 @@
+async function mineWoodLog(bot) {
+    // The function is about mining a single wood log. It first explores the environment until it finds a wood log block. The types of logs it can find include oak, birch, spruce, jungle, acacia, dark oak, and mangrove. If a log block is not found, the function ends. If a log block is found, it mines the log block.
+}

@@ -1,14 +1,15 @@
 import os
 
 import voyager.utils as U
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings.openai import OpenAIEmbeddings
+# from langchain.chat_models import ChatOpenAI
+# from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.schema import HumanMessage, SystemMessage
 from langchain.vectorstores import Chroma
 
 from voyager.prompts import load_prompt
 from voyager.control_primitives import load_control_primitives
-
+from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
+import os
 
 class SkillManager:
     def __init__(
@@ -19,12 +20,30 @@ class SkillManager:
         request_timout=120,
         ckpt_dir="ckpt",
         resume=False,
+        re_embed_skill=False
     ):
-        self.llm = ChatOpenAI(
-            model_name=model_name,
+        # self.llm = ChatOpenAI(
+        #     model_name=model_name,
+        #     temperature=temperature,
+        #     request_timeout=request_timout,
+        # )
+        self.llm = AzureChatOpenAI(
+            # model_name=model_name,
+            azure_endpoint=os.environ["AZURE_MODEL_ENDPOINT"],
+            azure_deployment=model_name,
+            openai_api_version=os.environ["AZURE_OPENAI_API_VERSION"],
             temperature=temperature,
             request_timeout=request_timout,
         )
+
+        embeddings_model = AzureOpenAIEmbeddings(
+            azure_endpoint=os.environ["AZURE_EMBEDDING_ENDPOINT"],
+            azure_deployment='text-embedding-3-large',
+            openai_api_version=os.environ["AZURE_OPENAI_API_VERSION"],
+            openai_api_key=os.environ['OPENAI_EMBEDDING_API_KEY']
+        )
+
+
         U.f_mkdir(f"{ckpt_dir}/skill/code")
         U.f_mkdir(f"{ckpt_dir}/skill/description")
         U.f_mkdir(f"{ckpt_dir}/skill/vectordb")
@@ -37,11 +56,25 @@ class SkillManager:
             self.skills = {}
         self.retrieval_top_k = retrieval_top_k
         self.ckpt_dir = ckpt_dir
+        # self.vectordb = Chroma(
+        #     collection_name="skill_vectordb",
+        #     embedding_function=OpenAIEmbeddings(),
+        #     persist_directory=f"{ckpt_dir}/skill/vectordb",
+        # )
         self.vectordb = Chroma(
             collection_name="skill_vectordb",
-            embedding_function=OpenAIEmbeddings(),
+            embedding_function=embeddings_model,
             persist_directory=f"{ckpt_dir}/skill/vectordb",
         )
+        if re_embed_skill:
+            for key, value in self.skills.items():
+                self.vectordb.add_texts(
+                    texts=[value['description']],
+                    ids=[key],
+                    metadatas=[{"name": key}],
+                )
+            
+            self.vectordb.persist()
         assert self.vectordb._collection.count() == len(self.skills), (
             f"Skill Manager's vectordb is not synced with skills.json.\n"
             f"There are {self.vectordb._collection.count()} skills in vectordb but {len(self.skills)} skills in skills.json.\n"
@@ -112,6 +145,7 @@ class SkillManager:
         return f"async function {program_name}(bot) {{\n{skill_description}\n}}"
 
     def retrieve_skills(self, query):
+        # import ipdb; ipdb.set_trace()
         k = min(self.vectordb._collection.count(), self.retrieval_top_k)
         if k == 0:
             return []

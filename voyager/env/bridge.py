@@ -10,7 +10,7 @@ import gymnasium as gym
 from gymnasium.core import ObsType
 
 import voyager.utils as U
-
+from voyager.utils.logger import Timer
 from .minecraft_launcher import MinecraftInstance
 from .process_monitor import SubprocessMonitor
 
@@ -18,11 +18,12 @@ from .process_monitor import SubprocessMonitor
 class VoyagerEnv(gym.Env):
     def __init__(
         self,
+        mc_host='localhost',
         mc_port=None,
         azure_login=None,
         server_host="http://127.0.0.1",
         server_port=3000,
-        request_timeout=600,
+        request_timeout=600000,
         log_path="./logs",
     ):
         if not mc_port and not azure_login:
@@ -31,6 +32,7 @@ class VoyagerEnv(gym.Env):
             warnings.warn(
                 "Both mc_port and mc_login are specified, mc_port will be ignored"
             )
+        self.mc_host = mc_host  
         self.mc_port = mc_port
         self.azure_login = azure_login
         self.server = f"{server_host}:{server_port}"
@@ -106,6 +108,7 @@ class VoyagerEnv(gym.Env):
         self,
         code: str,
         programs: str = "",
+        retry:int = 3
     ) -> Tuple[ObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
         if not self.has_reset:
             raise RuntimeError("Environment has not been reset yet")
@@ -115,11 +118,36 @@ class VoyagerEnv(gym.Env):
             "code": code,
             "programs": programs,
         }
-        res = requests.post(
-            f"{self.server}/step", json=data, timeout=self.request_timeout
-        )
-        if res.status_code != 200:
-            raise RuntimeError("Failed to step Minecraft server")
+        while retry > 0:
+            try:
+                with Timer('post step'):
+                    res = requests.post(
+                        f"{self.server}/step", json=data, timeout=self.request_timeout
+                    )
+                    if res.status_code == 200:
+                        print(f'response:{res.json()}')
+                        break
+                    else:
+                        retry -= 1
+                        print(f"Step Minecraft server failed, retrying")
+                        if retry == 0:
+                            raise RuntimeError("Step Minecraft server failed!")
+            except requests.exceptions.Timeout:
+                retry -= 1
+                print(f"Step Minecraft server timeout, retrying")   
+                if retry == 0:
+                    raise RuntimeError("Step Minecraft server timeout!")
+                res = requests.post(
+                    f"{self.server}/start",
+                    json=self.reset_options,
+                    timeout=self.request_timeout,
+                )
+
+        # res = requests.post(
+        #     f"{self.server}/step", json=data, timeout=self.request_timeout
+        # )
+        # if res.status_code != 200:
+        #     raise RuntimeError("Failed to step Minecraft server")
         returned_data = res.json()
         self.pause()
         return json.loads(returned_data)
@@ -140,6 +168,7 @@ class VoyagerEnv(gym.Env):
             raise RuntimeError("inventory can only be set when options is hard")
 
         self.reset_options = {
+            'host': self.mc_host,
             "port": self.mc_port,
             "reset": options.get("mode", "hard"),
             "inventory": options.get("inventory", {}),
@@ -147,13 +176,15 @@ class VoyagerEnv(gym.Env):
             "spread": options.get("spread", False),
             "waitTicks": options.get("wait_ticks", 5),
             "position": options.get("position", None),
+            'username': options.get('username', 'bot')
         }
-
-        self.unpause()
-        self.mineflayer.stop()
+        with Timer('reset unpause mc server'):
+            self.unpause()
+        with Timer('reset stpo mc server'):
+            self.mineflayer.stop()
         time.sleep(1)  # wait for mineflayer to exit
-
-        returned_data = self.check_process()
+        with Timer('reset check process'):
+            returned_data = self.check_process()
         self.has_reset = True
         self.connected = True
         # All the reset in step will be soft

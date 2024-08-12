@@ -3,13 +3,14 @@ import time
 
 import voyager.utils as U
 from javascript import require
-from langchain.chat_models import ChatOpenAI
+# from langchain.chat_models import ChatOpenAI
+from langchain_openai import AzureChatOpenAI
+import os
 from langchain.prompts import SystemMessagePromptTemplate
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 
 from voyager.prompts import load_prompt
 from voyager.control_primitives_context import load_control_primitives_context
-
 
 class ActionAgent:
     def __init__(
@@ -21,7 +22,9 @@ class ActionAgent:
         resume=False,
         chat_log=True,
         execution_error=True,
+        system_prompt_cut_to=1800
     ):
+        self.system_prompt_cut_to = system_prompt_cut_to
         self.ckpt_dir = ckpt_dir
         self.chat_log = chat_log
         self.execution_error = execution_error
@@ -31,8 +34,16 @@ class ActionAgent:
             self.chest_memory = U.load_json(f"{ckpt_dir}/action/chest_memory.json")
         else:
             self.chest_memory = {}
-        self.llm = ChatOpenAI(
-            model_name=model_name,
+        # self.llm = ChatOpenAI(
+        #     model_name=model_name,
+        #     temperature=temperature,
+        #     request_timeout=request_timout,
+        # )
+        self.llm = AzureChatOpenAI(
+            azure_endpoint=os.environ["AZURE_MODEL_ENDPOINT"],
+            azure_deployment=model_name,
+            openai_api_version=os.environ["AZURE_OPENAI_API_VERSION"],
+            # model_name=model_name,
             temperature=temperature,
             request_timeout=request_timout,
         )
@@ -97,6 +108,12 @@ class ActionAgent:
             programs=programs, response_format=response_format
         )
         assert isinstance(system_message, SystemMessage)
+
+        content_split = system_message.content.split()
+        content_split_len = len(content_split)
+        # TODO: 2000大概值，这样肯定效果会很不好
+        if content_split_len > self.system_prompt_cut_to:
+            system_message.content = ' '.join(content_split[content_split_len-self.system_prompt_cut_to:])
         return system_message
 
     def render_human_message(

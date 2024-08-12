@@ -1,8 +1,9 @@
 from voyager.prompts import load_prompt
 from voyager.utils.json_utils import fix_and_parse_json
-from langchain.chat_models import ChatOpenAI
+# from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
-
+from langchain_openai import AzureChatOpenAI
+import os
 
 class CriticAgent:
     def __init__(
@@ -11,9 +12,19 @@ class CriticAgent:
         temperature=0,
         request_timout=120,
         mode="auto",
+        system_prompt_cut_to=1800
     ):
-        self.llm = ChatOpenAI(
-            model_name=model_name,
+        self.system_prompt_cut_to = system_prompt_cut_to
+        # self.llm = ChatOpenAI(
+        #     model_name=model_name,
+        #     temperature=temperature,
+        #     request_timeout=request_timout,
+        # )
+        self.llm = AzureChatOpenAI(
+            # model_name=model_name,
+            azure_endpoint=os.environ["AZURE_MODEL_ENDPOINT"],
+            azure_deployment=model_name,
+            openai_api_version=os.environ["AZURE_OPENAI_API_VERSION"],
             temperature=temperature,
             request_timeout=request_timout,
         )
@@ -22,6 +33,11 @@ class CriticAgent:
 
     def render_system_message(self):
         system_message = SystemMessage(content=load_prompt("critic"))
+        content_split = system_message.content.split()
+        content_split_len = len(content_split)
+        # TODO: 2000大概值，这样肯定效果会很不好
+        if content_split_len > self.system_prompt_cut_to:
+            system_message.content = ' '.join(content_split[content_split_len-self.system_prompt_cut_to:])
         return system_message
 
     def render_human_message(self, *, events, task, context, chest_observation):

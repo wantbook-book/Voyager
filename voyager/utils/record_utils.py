@@ -31,10 +31,13 @@ class EventRecorder:
         )
         self.iteration += 1
         if not self.init_position:
-            self.init_position = [
-                events[0][1]["status"]["position"]["x"],
-                events[0][1]["status"]["position"]["z"],
-            ]
+            try:
+                self.init_position = [
+                    events[0][1]["status"]["position"]["x"],
+                    events[0][1]["status"]["position"]["z"],
+                ]
+            except Exception as e:
+                print(f"Error: {e}")
         for event_type, event in events:
             self.update_items(event)
             if event_type == "observe":
