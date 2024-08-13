@@ -2,7 +2,7 @@ import os.path
 import time
 import warnings
 from typing import SupportsFloat, Any, Tuple, Dict
-
+from voyager.utils.run_utils import retry
 import requests
 import json
 
@@ -202,14 +202,16 @@ class VoyagerEnv(gym.Env):
             self.mc_instance.stop()
         self.mineflayer.stop()
         return not self.connected
-
+    
+    @retry(retry_count=3)
     def pause(self):
         if self.mineflayer.is_running and not self.server_paused:
             res = requests.post(f"{self.server}/pause")
             if res.status_code == 200:
                 self.server_paused = True
         return self.server_paused
-
+    
+    @retry(retry_count=3)
     def unpause(self):
         if self.mineflayer.is_running and self.server_paused:
             res = requests.post(f"{self.server}/pause")
