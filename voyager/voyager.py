@@ -22,7 +22,7 @@ class Voyager:
         server_port: int = 3000,
         openai_api_key: str = None,
         env_wait_ticks: int = 20,
-        env_request_timeout: int = 600000,
+        env_request_timeout: int = 600,
         max_iterations: int = 80,
         reset_placed_if_failed: bool = False,
         action_agent_model_name: str = "gpt-4",
@@ -192,19 +192,19 @@ class Voyager:
             "bot.chat(`/time set ${getNextTime()}`);\n"
             + f"bot.chat('/difficulty {difficulty}');"
         )
-        with Timer("retrieve skills"):
+        with Timer("voyager reset: retrieve skills"):
             skills = self.skill_manager.retrieve_skills(query=self.context)
         print(
-            f"\033[33mRender Action Agent system message with {len(skills)} skills\033[0m"
+            f"\033[32mRender Action Agent system message with {len(skills)} skills\033[0m"
         )
         system_message = self.action_agent.render_system_message(skills=skills)
         human_message = self.action_agent.render_human_message(
             events=events, code="", task=self.task, context=context, critique=""
         )
         self.messages = [system_message, human_message]
-        print(
-            f"\033[32m****Action Agent human message****\n{human_message.content}\033[0m"
-        )
+        # print(
+        #     f"\033[32m****Action Agent human message****\n{human_message.content}\033[0m"
+        # )
         assert len(self.messages) == 2
         self.conversations = []
         return self.messages
@@ -217,7 +217,7 @@ class Voyager:
             raise ValueError("Agent must be reset before stepping")
         with Timer("step: llm select skill"):
             ai_message = self.action_agent.llm(self.messages)
-        print(f"\033[34m****Action Agent ai message****\n{ai_message.content}\033[0m")
+            print(f"\033[34m****Action Agent ai message**** {ai_message.content}\033[0m")
         self.conversations.append(
             (self.messages[0].content, self.messages[1].content, ai_message.content)
         )
@@ -296,16 +296,21 @@ class Voyager:
             info["program_code"] = parsed_result["program_code"]
             info["program_name"] = parsed_result["program_name"]
         else:
-            print(
-                f"\033[32m****Action Agent human message****\n{self.messages[-1].content}\033[0m"
-            )
+            print(f"\033[35m****step fails, Failed task: {self.task}****\033[0m")
+            pass
+            # print(
+            #     f"\033[32m****Action Agent human message****\n{self.messages[-1].content}\033[0m"
+            # )
         print(f"\033[35mstep inventory: {self.last_events[-1][1]['inventory']}\033[0m")
+        print(f"\033[35mrollout step done: {done}\033[0m")
         return self.messages, self.last_events[-1][1]['inventory'], done, info
 
     def rollout(self, *, task, context, reset_env=True):
-        self.reset(task=task, context=context, reset_env=reset_env)
+        with Timer("rollout: reset"):
+            self.reset(task=task, context=context, reset_env=reset_env)
         while True:
-            messages, reward, done, info = self.step()
+            with Timer("rollout: step"):
+                messages, reward, done, info = self.step()
             if done:
                 break
         return messages, reward, done, info
@@ -346,7 +351,7 @@ class Voyager:
                     max_retries=5,
                 )
             print(
-                f"\033[35mStarting task {task} for at most {self.action_agent_task_max_retries} times\033[0m"
+                f'\033[35mStarting task "{task}" for at most {self.action_agent_task_max_retries} times\033[0m'
             )
             try:
                 # messages, reward, done, info = self.rollout(
@@ -377,6 +382,7 @@ class Voyager:
                 print("Your last round rollout terminated due to error:")
                 print(f"\033[41m{e}\033[0m")
                 import traceback; traceback.print_exc()
+                continue
 
             if info["success"]:
                 self.skill_manager.add_new_skill(info)

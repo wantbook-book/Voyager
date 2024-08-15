@@ -4,7 +4,7 @@ main.py
 __pycache__/
 *.py[cod]
 *$py.class
-
+skill_library/trial4
 # C extensions
 *.so
 results

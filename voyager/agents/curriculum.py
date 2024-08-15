@@ -274,7 +274,7 @@ class CurriculumAgent:
                 if should_include:
                     content += observation[key]
 
-        print(f"\033[35m****Curriculum Agent human message****\n{content}\033[0m")
+        # print(f"\033[35m****Curriculum Agent human message****\n{content}\033[0m")
         return HumanMessage(content=content)
 
     def propose_next_task(self, *, events, chest_observation, max_retries=5):
@@ -333,9 +333,10 @@ class CurriculumAgent:
         if max_retries == 0:
             raise RuntimeError("Max retries reached, failed to propose ai task.")
         curriculum = self.llm(messages).content
-        print(f"\033[31m****Curriculum Agent ai message****\n{curriculum}\033[0m")
+        # print(f"\033[31m****Curriculum Agent ai message****\n{curriculum}\033[0m")
         try:
             response = self.parse_ai_message(curriculum)
+            print(f"\033[31m****Curriculum Agent llm response****{response}\033[0m")
             assert "next_task" in response
             context = self.get_task_context(response["next_task"])
             return response["next_task"], context

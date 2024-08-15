@@ -14,3 +14,4 @@ psutil
 minecraft_launcher_lib
 ipdb
 ipykernel
+langchain-openai

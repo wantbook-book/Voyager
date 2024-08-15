@@ -181,7 +181,7 @@ class VoyagerEnv(gym.Env):
                         f"{self.server}/step", json=data, timeout=self.request_timeout
                     )
                     if res.status_code == 200:
-                        print(f'response:{res.json()}')
+                        # print(f'response:{res.json()}')
                         break
                     else:
                         retry -= 1
