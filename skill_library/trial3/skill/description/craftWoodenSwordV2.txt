@@ -1,0 +1,3 @@
+async function craftWoodenSword(bot) {
+    // The function is about crafting a wooden sword. First, it checks if there are enough oak logs in the inventory. If not, it explores the environment until it finds oak logs and mines them until there are enough in the inventory. Then, it checks if there are enough oak planks in the inventory. If not, it crafts oak planks using oak logs. Next, it checks if there are enough sticks in the inventory. If not, it crafts sticks using oak planks. After that, it explores the environment until it finds a crafting table and places it near the player. Finally, it crafts a wooden sword using oak planks and sticks with the crafting table.
+}

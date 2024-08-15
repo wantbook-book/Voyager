@@ -1,0 +1,5 @@
+async function mineThreeMoreWoodLogs(bot) {
+    // The function is about mining 3 more wood logs using a wooden axe. First, it checks if the bot has a wooden axe in its inventory. If not, it checks if it has enough oak planks and sticks to craft one. If not, it crafts the required items. Then, it checks if there is a crafting table nearby. If not, it returns. If there is, it crafts a wooden axe using the crafting table and the available materials. 
+
+Afterwards, it enters a loop to find and mine 3 wood log blocks. It explores the environment until it finds an oak log block. If it can't find one, it returns. If it does find one, it mines the block. Finally, it sends a chat message indicating that 3 more wood logs have been mined.
+}

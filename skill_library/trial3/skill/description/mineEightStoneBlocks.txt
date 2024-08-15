@@ -1,0 +1,3 @@
+async function mineEightStoneBlocks(bot) {
+    // The function is about mining 8 stone blocks using a wooden pickaxe. It first checks if a wooden pickaxe is equipped. If not, it returns and displays a message. If a wooden pickaxe is equipped, it proceeds to mine 8 stone blocks using the pickaxe and displays a message indicating the completion of the task.
+}
