@@ -247,7 +247,7 @@ class VoyagerEnv(gym.Env):
         self.reset_options["reset"] = "soft"
         self.pause()
         if returned_data is None:
-            self.logger.warning('reset return None')
+            print('reset return None')
             return None        
         return json.loads(returned_data)
 
