@@ -94,6 +94,7 @@ class ActionAgent:
             "smeltItem",
             "killMob",
         ]
+        # TODO: 这有什么用？base_skills
         if not self.llm.model_name == "gpt-3.5-turbo":
             base_skills += [
                 "useChest",
@@ -261,6 +262,7 @@ class ActionAgent:
                 ), f"Main function {main_function['name']} must take a single argument named 'bot'"
                 program_code = "\n\n".join(function["body"] for function in functions)
                 exec_code = f"await {main_function['name']}(bot);"
+                f"\033[33mskill name: {main_function['name']}\033[0m"
                 return {
                     "program_code": program_code,
                     "program_name": main_function["name"],
