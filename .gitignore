@@ -25,6 +25,7 @@ wheels/
 .installed.cfg
 *.egg
 test_langchain.ipynb
+test_langchain.py
 test_prompts_len.ipynb
 # PyInstaller
 #  Usually these files are written by a python script from a template
