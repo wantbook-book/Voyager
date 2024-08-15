@@ -4,7 +4,7 @@ main.py
 __pycache__/
 *.py[cod]
 *$py.class
-
+skill_library/trail4
 # C extensions
 *.so
 results
