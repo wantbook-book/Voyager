@@ -1,0 +1,3 @@
+async function craftStonePickaxe(bot) {
+    // The function is about crafting a stone pickaxe. It first places a crafting table near the bot's current position. Then, it crafts a stone pickaxe using the crafting table.
+}

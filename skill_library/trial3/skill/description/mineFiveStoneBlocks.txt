@@ -1,0 +1,3 @@
+async function mineFiveStoneBlocks(bot) {
+    // The function is about mining 5 stone blocks. It first explores the environment until it finds a stone block. Once a stone block is found, it mines a total of 5 stone blocks.
+}

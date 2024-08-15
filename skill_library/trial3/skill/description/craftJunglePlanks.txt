@@ -1,0 +1,3 @@
+async function craftJunglePlanks(bot) {
+    // The function is about crafting 4 jungle planks. It first checks if there is a jungle log in the inventory, if not, it mines one. Then it checks if there is a crafting table in the inventory, if not, it crafts one using the jungle log. The crafting table is then placed near the player. Finally, it crafts 4 jungle planks using the jungle log and the crafting table.
+}
