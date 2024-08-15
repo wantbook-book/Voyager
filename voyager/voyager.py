@@ -399,7 +399,10 @@ class Voyager:
             print(
                 f"\033[35mFailed tasks: {', '.join(self.curriculum_agent.failed_tasks)}\033[0m"
             )
-
+        U.f_mkdir(f"./results/{self.environment}")
+        completed = None
+        print(f"\033[32m\n\nTicks on each step: {self.step_time}, LLM iters: {self.total_iter}, Completed: {completed}\033[0m")
+        U.dump_text(f"\n\nTicks on each step: {self.step_time}; LLM iters: {self.total_iter}; Completed: {completed}", f"./results/{self.environment}/explore_{self.action_agent_model_name.replace(' ', '_')}.txt")
         return {
             "completed_tasks": self.curriculum_agent.completed_tasks,
             "failed_tasks": self.curriculum_agent.failed_tasks,
