@@ -49,6 +49,7 @@ class SkillManager:
         U.f_mkdir(f"{ckpt_dir}/skill/vectordb")
         # programs for env execution
         self.control_primitives = load_control_primitives()
+        self.skill_primitives = self.load_skill_primitives()
         if resume:
             print(f"\033[33mLoading Skill Manager from {ckpt_dir}/skill\033[0m")
             self.skills = U.load_json(f"{ckpt_dir}/skill/skills.json")
@@ -84,11 +85,20 @@ class SkillManager:
 
     @property
     def programs(self):
+        # programs = ""
+        # for skill_name, entry in self.skills.items():
+        #     programs += f"{entry['code']}\n\n"
+        # for primitives in self.control_primitives:
+        #     programs += f"{primitives}\n\n"
+        # return programs
+    
         programs = ""
         for skill_name, entry in self.skills.items():
             programs += f"{entry['code']}\n\n"
         for primitives in self.control_primitives:
             programs += f"{primitives}\n\n"
+        for skill_primitive in self.skill_primitives:
+            programs += f"{skill_primitive}\n\n"
         return programs
 
     def add_new_skill(self, info):
@@ -159,3 +169,17 @@ class SkillManager:
         for doc, _ in docs_and_scores:
             skills.append(self.skills[doc.metadata["name"]]["code"])
         return skills
+
+    def load_skill_primitives(self, primitive_names=None):
+        package_path = "skill_library/skill"
+        if primitive_names is None:
+            primitive_names = [
+                primitives[:-3]
+                for primitives in os.listdir(f"{package_path}/primitive")
+                if primitives.endswith(".js")
+            ]
+        primitives = [
+            U.load_text(f"{package_path}/primitive/{primitive_name}.js")
+            for primitive_name in primitive_names
+        ]
+        return primitives

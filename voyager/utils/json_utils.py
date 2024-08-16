@@ -2,7 +2,7 @@ import json
 import re
 from typing import Any, Dict, Union
 from .file_utils import f_join
-
+import ast
 
 def json_load(*file_path, **kwargs):
     file_path = f_join(file_path)
@@ -140,6 +140,21 @@ def correct_json(json_str: str) -> str:
             return balanced_str
     return json_str
 
+
+def fix_and_parse_list(list_str: str):
+    pattern = r'\[.*?\]'
+
+    # Using re.findall to extract the content
+    extracted_content = re.findall(pattern, list_str, re.DOTALL)
+    i = 0
+    for item in extracted_content:
+        if "INST" not in item:
+            break
+        i+=1
+    # Print the extracted content
+    # print(extracted_content)
+    subgoal_list = ast.literal_eval(extracted_content[0])
+    return subgoal_list
 
 def fix_and_parse_json(
     json_str: str, try_to_fix_with_gpt: bool = True

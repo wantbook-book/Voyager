@@ -3,7 +3,7 @@ import json
 import os
 import time
 from typing import Dict
-
+from javascript import require
 import voyager.utils as U
 from .env import VoyagerEnv
 
@@ -11,7 +11,9 @@ from .agents import ActionAgent
 from .agents import CriticAgent
 from .agents import CurriculumAgent
 from .agents import SkillManager
+from .agents import CommentAgent
 from voyager.utils.logger import Timer
+import traceback
 # TODO: remove event memory
 class Voyager:
     def __init__(
@@ -20,6 +22,7 @@ class Voyager:
         mc_host: str = None,
         azure_login: Dict[str, str] = None,
         server_port: int = 3000,
+        environment: str = None,
         openai_api_key: str = None,
         env_wait_ticks: int = 20,
         env_request_timeout: int = 600,
@@ -41,6 +44,7 @@ class Voyager:
         critic_agent_model_name: str = "gpt-4",
         critic_agent_temperature: float = 0,
         critic_agent_mode: str = "auto",
+        comment_agent_model_name: str="gpt-3.5-turbo",
         skill_manager_model_name: str = "gpt-3.5-turbo",
         skill_manager_temperature: float = 0,
         skill_manager_retrieval_top_k: int = 5,
@@ -104,6 +108,7 @@ class Voyager:
         :param resume: whether to resume from checkpoint
         """
         # init env
+        self.environment = environment
         self.username = username
         self.env = VoyagerEnv(
             mc_host=mc_host,
@@ -118,7 +123,9 @@ class Voyager:
 
         # set openai api key
         os.environ["OPENAI_API_KEY"] = openai_api_key
-
+        self.total_time = 0 
+        self.total_iter = 0 
+        self.step_time = []
         # init agents
         self.action_agent_model_name = action_agent_model_name
         self.action_agent = ActionAgent(
@@ -144,6 +151,10 @@ class Voyager:
             warm_up=curriculum_agent_warm_up,
             core_inventory_items=curriculum_agent_core_inventory_items,
             system_prompt_cut_to=system_prompt_cut_to,
+        )
+        self.comment_agent = CommentAgent(
+            environment=environment,
+            model_name=comment_agent_model_name
         )
         self.critic_agent = CriticAgent(
             model_name=critic_agent_model_name,
@@ -231,16 +242,25 @@ class Voyager:
                     code,
                     programs=self.skill_manager.programs,
                 )
-            self.recorder.record(events, self.task)
+            self.total_time, self.total_iter = self.recorder.record(events, self.task)
             self.action_agent.update_chest_memory(events[-1][1]["nearbyChests"])
-            with Timer("step: critic agent check task success"):
-                success, critique = self.critic_agent.check_task_success(
-                    events=events,
-                    task=self.task,
-                    context=self.context,
-                    chest_observation=self.action_agent.render_chest_observation(),
-                    max_retries=5,
-                )
+            if self.environment == 'subgoal':
+                with Timer('Check Subgoal Success'):
+                    success = self.critic_agent.check_subgoal_success(
+                        events=events,
+                        task=self.task,
+                    )
+                    critique = ''
+                    print(f'\033[35msuccess: {success}\033[0m')
+            else:
+                with Timer("step: critic agent check task success"):
+                    success, critique = self.critic_agent.check_task_success(
+                        events=events,
+                        task=self.task,
+                        context=self.context,
+                        chest_observation=self.action_agent.render_chest_observation(),
+                        max_retries=5,
+                    )
 
             if self.reset_placed_if_failed and not success:
                 # revert all the placing event in the last step
@@ -272,13 +292,22 @@ class Voyager:
                 context=self.context,
                 critique=critique,
             )
+            # human_message = self.action_agent.render_human_message(
+            #     events=events,
+            #     code=parsed_result["program_name"],
+            #     task=self.task,
+            #     critique=critique,
+            #     skills=self.skills[1]
+            # )
             self.last_events = copy.deepcopy(events)
             self.messages = [system_message, human_message]
         else:
             assert isinstance(parsed_result, str)
-            self.recorder.record([], self.task)
+            # self.recorder.record([], self.task)
+            self.total_time, self.total_iter = self.recorder.record([], self.task)
             print(f"\033[34m{parsed_result} Trying again!\033[0m")
         assert len(self.messages) == 2
+        self.step_time.append(self.total_time)
         self.action_agent_rollout_num_iter += 1
         done = (
             self.action_agent_rollout_num_iter >= self.action_agent_task_max_retries
@@ -409,7 +438,18 @@ class Voyager:
             "skills": self.skill_manager.skills,
         }
 
-    def decompose_task(self, task):
+    # def decompose_task(self, task):
+    #     if not self.last_events:
+    #         self.last_events = self.env.reset(
+    #             options={
+    #                 "mode": "hard",
+    #                 "wait_ticks": self.env_wait_ticks,
+    #                 "username": self.username
+    #             }
+    #         )
+    #     return self.curriculum_agent.decompose_task(task, self.last_events)
+    
+    def decompose_task(self, task, last_tasklist=None, critique=None, health=None):
         if not self.last_events:
             self.last_events = self.env.reset(
                 options={
@@ -418,7 +458,7 @@ class Voyager:
                     "username": self.username
                 }
             )
-        return self.curriculum_agent.decompose_task(task, self.last_events)
+        return self.curriculum_agent.decompose_task(self.environment, task, last_tasklist, critique, health)
 
     def inference(self, task=None, sub_goals=[], reset_mode="hard", reset_env=True):
         if not task and not sub_goals:
@@ -453,3 +493,194 @@ class Voyager:
             print(
                 f"\033[35mFailed tasks: {', '.join(self.curriculum_agent.failed_tasks)}\033[0m"
             )
+
+    def inference_combat(self, task:str=None, sub_goals=[], reset_mode="hard", reset_env=True, feedback_rounds:int=1):
+        if not task and not sub_goals:
+            raise ValueError("Either task or sub_goals must be provided")
+        print(f'\033[35mStarting inference for task: {task}\033[0m')
+        with Timer('env reset'):
+            self.last_events = self.env.reset(
+                options={
+                    "mode": reset_mode,
+                    "wait_ticks": self.env_wait_ticks,
+                    "username": self.username
+                }
+            )
+        if not sub_goals:
+            with Timer('decompose task'):
+                sub_goals = self.decompose_task(task)
+                print(f'\033[35mDecomposed sub_goals: {sub_goals}\033[0m')
+        
+        self.curriculum_agent.completed_tasks = []
+        self.curriculum_agent.failed_tasks = []
+        self.last_events = self.env.step("")
+        for i in range(feedback_rounds):
+            try:
+                self.recorder.elapsed_time = 0
+                self.recorder.iteration = 0
+                self.step_time = []
+                self.critic_agent.last_inventory = "Empty"
+                self.critic_agent.last_inventory_used = 0
+                while self.curriculum_agent.progress < len(sub_goals):
+                    next_task = sub_goals[self.curriculum_agent.progress]
+                    print(f'\033[35mNext subgoal: {next_task}, All subgoals: {sub_goals}\033[0m')
+                    with Timer('get task context'):
+                        context = self.curriculum_agent.get_task_context(next_task)
+                        print(f'\033[35mGot task context: {context}\033[0m')
+                    with Timer('rollout'):
+                        messages, reward, done, info = self.rollout(
+                            task=next_task,
+                            context=context,
+                            reset_env=reset_env,
+                        )
+                    with Timer('Update Exploration Progress'):
+                        self.curriculum_agent.update_exploration_progress(info)
+                        print(f"\033[35mCompleted tasks: {', '.join(self.curriculum_agent.completed_tasks)}\033[0m")
+                        print(f"\033[31mFailed tasks: {', '.join(self.curriculum_agent.failed_tasks)}\033[0m")
+                    print(f'\033[35mself.step_time[-1]: {self.step_time[-1]}\033[0m')
+                    if (self.step_time[-1] >= 24000):
+                        print(f"\033[31mInference Time limit reached >=24000\033[0m")
+                        break
+                # str_list = task.split()
+                # TODO: hard coding
+                self.run_raw_skill("./test_env/combatEnv.js", [10, 15, 100])
+                with Timer('rerank monsters'):
+                    combat_order = self.curriculum_agent.rerank_monster(task=task)
+                    print(f'\033[35mCombat order: {combat_order}\033[0m')
+
+                for task_item in task.split(','):
+                    summon_para = task_item.split()
+                    summon_para.insert(1, 5)  # idx =1, r=5
+                    self.run_raw_skill("./test_env/summonMob.js", summon_para)
+
+                monster_origin = task.split(',')
+                try:
+                    for monster in combat_order:
+                        para = monster.split(' ')
+                        combat_para2 = int(para[0])
+                        combat_para1 = para[1].lower() # ensure no uppercase
+                except:
+                    # if error happens, use the origin order to kill monster
+                    combat_order = monster_origin
+                finally:
+                    for monster in combat_order:
+                        para = monster.split(' ')
+                        combat_para2 = int(para[0])
+                        combat_para1 = para[1].lower() # ensure no uppercase
+                        with Timer('kill monsters'):
+                            print(f'\033[35mKill monster skill parameter: {combat_para1}, {combat_para2}\033[0m')
+                            kill_res = self.run_raw_skill("skill_library/skill/primitive/killMonsters.js", [combat_para1, combat_para2])
+                        if 'lost' in kill_res:
+                            break
+                with Timer('Comment Check Task Success'):
+                    health, cirtiques, result, equipment = \
+                        self.comment_agent.check_task_success(events=self.last_events, task=sub_goals, time=self.total_time, iter=self.total_iter)
+                U.f_mkdir(f"./results/combat")
+                U.dump_text(f"Route {i}; Plan list: {sub_goals}; Equipments obtained: {equipment}; Ticks on each step: {self.step_time}; LLM iters: {self.total_iter}; Health: {health:.1f}; Combat result: {result}\n\n", f"./results/combat/{task.replace(' ', '_')}{self.action_agent_model_name.replace(' ', '_')}.txt")
+
+                with Timer('decompose task again based on feedback'):
+                    sub_goals = self.decompose_task(task, last_tasklist=equipment, critique=cirtiques, health=health)
+                    print(f'\033[35mDecomposed sub_goals based on feedback: {sub_goals}\033[0m')
+                
+            except Exception as e:
+                traceback.print_exc()
+                U.f_mkdir(f"./results/{self.environment}")
+                U.dump_text(f"Route {i}; Plan list: {sub_goals}; Ticks on each step: {self.step_time}; LLM iters: {self.total_iter}; failed; caused by {e}\n\n", f"./results/combat/{task.replace(' ', '_')}{self.action_agent_model_name.replace(' ', '_')}.txt")
+            finally:
+                self.run_raw_skill("./test_env/respawnAndClear.js")
+                self.env.reset(
+                    options={
+                        "mode": "hard",
+                        "wait_ticks": self.env_wait_ticks,
+                        "username": self.username
+                    }
+                )
+                self.curriculum_agent.completed_tasks = []
+                self.curriculum_agent.failed_tasks = []
+        
+    def run_raw_skill(self, skill_path, parameters = [], reset = False):
+        # reset here only used for skill test
+        if (reset):
+            self.env.reset(
+                options={
+                    "mode": "soft",
+                    "wait_ticks": self.env_wait_ticks,
+                    "username": self.username
+                }
+            )
+        retry = 3
+        while retry > 0:
+            try:
+                babel = require("@babel/core")
+                babel_generator = require("@babel/generator").default
+
+                with open(f"{skill_path}", 'r') as file:
+                    code = file.read()
+
+                parsed = babel.parse(code)
+                functions = []
+                assert len(list(parsed.program.body)) > 0, "No functions found"
+                for i, node in enumerate(parsed.program.body):
+                    if node.type != "FunctionDeclaration":
+                        continue
+                    node_type = (
+                        "AsyncFunctionDeclaration"
+                        if node["async"]
+                        else "FunctionDeclaration"
+                    )
+                    functions.append(
+                        {
+                            "name": node.id.name,
+                            "type": node_type,
+                            "body": babel_generator(node).code,
+                            "params": list(node["params"]),
+                        }
+                    )
+                # find the last async function
+                main_function = None
+                for function in reversed(functions):
+                    if function["type"] == "AsyncFunctionDeclaration":
+                        main_function = function
+                        break
+                assert (
+                    main_function is not None
+                ), "No async function found. Your main function must be async."
+                assert (
+                    main_function["params"][0].name == "bot"
+                ), f"Main function {main_function['name']} must take a single argument named 'bot'"
+                
+                program_code = "\n\n".join(function["body"] for function in functions)
+                para_list = "(bot"
+                for i in range(len(parameters)):
+                    if isinstance(parameters[i], str):
+                        para_list += ", " + "\"" + parameters[i] + "\""
+                    else:
+                        para_list += ", " + str(parameters[i])
+                para_list += ");"
+                exec_code = f"await {main_function['name']}{para_list}"
+                parsed_result = {
+                    "program_code": program_code,
+                    "program_name": main_function["name"],
+                    "exec_code": exec_code,
+                }
+                break
+            except Exception as e:
+                retry -= 1
+                parsed_result = f"Error parsing action response (before program execution): {e}"
+
+        result = ''
+        if isinstance(parsed_result, dict):
+            code = parsed_result["program_code"] + "\n" + parsed_result["exec_code"]
+            events = self.env.step(
+                code,
+                programs=self.skill_manager.programs,
+            )
+            for event in reversed(events):
+                if event[0] == 'onChat':
+                    result = event[1]['onChat']
+                    break
+            self.last_events = copy.deepcopy(events)
+        else:
+            print(f"\033[31m{parsed_result} Code executes error!\033[0m")
+        
+        return result

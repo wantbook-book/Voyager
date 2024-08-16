@@ -5,13 +5,20 @@ import re
 
 import voyager.utils as U
 from voyager.prompts import load_prompt
-from voyager.utils.json_utils import fix_and_parse_json
+from voyager.utils.json_utils import fix_and_parse_json, fix_and_parse_list
 # from langchain.chat_models import ChatOpenAI
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 # from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.schema import HumanMessage, SystemMessage
 from langchain.vectorstores import Chroma
 import os
+
+env_prompt = {
+    'combat': 'combat_sys_prompt',
+    'farming': 'farming_sys_prompt',
+    'explore': 'explore_sys_prompt'
+}
+
 
 class CurriculumAgent:
     def __init__(
@@ -407,20 +414,33 @@ class CurriculumAgent:
         )
         U.dump_json(self.failed_tasks, f"{self.ckpt_dir}/curriculum/failed_tasks.json")
 
-    def decompose_task(self, task, events):
+    # def decompose_task(self, task, events):
+    #     messages = [
+    #         SystemMessage(
+    #             content=load_prompt("curriculum_task_decomposition"),
+    #         ),
+    #         self.render_human_message(events=events, chest_observation=""),
+    #         HumanMessage(content=f"Final task: {task}"),
+    #     ]
+    #     print(
+    #         f"\033[31m****Curriculum Agent task decomposition****\nFinal task: {task}\033[0m"
+    #     )
+    #     response = self.llm(messages).content
+    #     print(f"\033[31m****Curriculum Agent task decomposition****\n{response}\033[0m")
+    #     return fix_and_parse_json(response)
+
+    def decompose_task(self, environment, monster, last_tasklist, critique, health):
+        # for different test env, modify prompt here
         messages = [
             SystemMessage(
-                content=load_prompt("curriculum_task_decomposition"),
+                content=load_prompt(env_prompt[environment]),
             ),
-            self.render_human_message(events=events, chest_observation=""),
-            HumanMessage(content=f"Final task: {task}"),
+            # self.render_human_message(events=events, chest_observation=""),
+            HumanMessage(content=f"Equipment obtained in last round: {last_tasklist};\n Health after last combat:{health};\n Critique: {critique};\n Monster: {monster}.\n"),
         ]
-        print(
-            f"\033[31m****Curriculum Agent task decomposition****\nFinal task: {task}\033[0m"
-        )
+        # print(f"\033[31m****Curriculum Agent task decomposition****\nFinal task: {task}\033[0m")
         response = self.llm(messages).content
-        print(f"\033[31m****Curriculum Agent task decomposition****\n{response}\033[0m")
-        return fix_and_parse_json(response)
+        return fix_and_parse_list(response)
 
     def run_qa(self, *, events, chest_observation):
         questions_new, _ = self.run_qa_step1_ask_questions(
@@ -473,6 +493,39 @@ class CurriculumAgent:
             self.qa_cache_questions_vectordb.persist()
         context = f"Question: {question}\n{answer}"
         return context
+
+    def rerank_monster(self, task):
+        messages = [
+            SystemMessage(
+                content=load_prompt('combat_template'),
+            ),
+            HumanMessage(content=task),
+        ]
+
+        monster_origin = task.split(',')
+        monster_order = []
+        retry = 3
+        while retry > 0:
+            try:
+                response = self.llm(messages).content
+                print(f'\033[35m****Curriculum Agent monster rerank****\n{response}\033[0m')
+                monster_order = fix_and_parse_list(response)
+                break
+            except Exception as e:
+                retry -= 1
+        
+        for item in monster_order:
+            if len(item.split()) != 2:
+                for monster in monster_origin:
+                    if item in monster.strip():
+                        item = monster.strip()
+
+        if len(monster_origin) != len(monster_order):
+            for monster in monster_origin:
+                if monster not in monster_order:
+                    monster_order.append(monster.strip())
+            
+        return monster_order
 
     def render_system_message_qa_step1_ask_questions(self):
         system_message = SystemMessage(content=load_prompt("curriculum_qa_step1_ask_questions"))
