@@ -5,6 +5,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 skill_library/trial4
+skill_library/trial5
 # C extensions
 *.so
 results
@@ -129,3 +130,4 @@ debug_*
 logs/
 plot_iter.py
 *.svg
+
